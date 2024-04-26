@@ -1,8 +1,6 @@
 import cv2
 import math
 
-from kivy.uix.gridlayout import GridLayout
-
 from object_detector import *
 import numpy as np
 import os
@@ -14,10 +12,10 @@ from kivy.uix.textinput import TextInput
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.graphics import Rectangle, Line
 from kivy.uix.widget import Widget
-from kivy.clock import Clock
 from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.graphics.texture import Texture
@@ -34,18 +32,18 @@ labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage'
           19: 'mango', 20: 'onion', 21: 'orange', 22: 'paprika', 23: 'pear', 24: 'peas', 25: 'pineapple',
           26: 'pomegranate', 27: 'potato', 28: 'raddish', 29: 'soy beans', 30: 'spinach', 31: 'sweetcorn',
           32: 'sweetpotato', 33: 'tomato', 34: 'turnip', 35: 'watermelon'}
-sphereproduct = ['Apple','Banana', 'Bello Pepper', 'Chilli Pepper', 'Grapes', 'Jalepeno', 'Kiwi', 'Lemon', 'Orange',
-                 'Paprika', 'Pear', 'Tomato', 'Pomegranate', 'Watermelon', 'Lettuce', 'Onion']
+sphereproduct = ['apple','banana', 'bello pepper', 'chilli pepper', 'grapes', 'jalepeno', 'kiwi', 'lemon', 'orange',
+                 'paprika', 'pear', 'tomato', 'pomegranate', 'watermelon', 'lettuce', 'onion']
 
-cylinderproduct = ['Beetroot', 'Cabbage', 'Capsicum', 'Carrot', 'Cauliflower', 'Corn', 'Cucumber', 'Eggplant', 'Ginger',
-                   'Peas', 'Potato', 'Raddish', 'Soy Beans', 'Spinach', 'Sweetcorn', 'Sweetpotato', 'Mango',
-                   'Turnip', 'Pineapple']
+cylinderproduct = ['beetroot', 'cabbage', 'capsicum', 'carrot', 'cauliflower', 'corn', 'cucumber', 'eggplant', 'ginger',
+                   'peas', 'potato', 'raddish', 'soy beans', 'spinach', 'sweetcorn', 'sweetpotato', 'mango',
+                   'turnip', 'pineapple']
 
 size_categories = {
-    'Small': {'Spherical': (2, 3.5), 'elongated': (0.5, 2)},
-    'Medium': {'Spherical': (3.5, 5), 'elongated': (2, 3.5)},
-    'Large': {'Spherical': (5, 6.5), 'elongated': (3.5, 5)},
-    'Extra-Large or Jumbo': {'Spherical': (6.5, float('inf')), 'elongated': (5, float('inf'))}
+    'Small': {'spherical': (5.08, 6.35), 'elongated': (1.27, 2.54)},
+    'Medium': {'spherical': (6.35, 7.62), 'elongated': (2.54, 3.81)},
+    'Large': {'spherical': (7.62, 8.89), 'elongated': (3.81, 5.08)},
+    'Extra-Large or Jumbo': {'spherical': (8.89, float('inf')), 'elongated': (5.08, float('inf'))}
 }
 
 Builder.load_string('''
@@ -57,7 +55,6 @@ Builder.load_string('''
         allow_stretch: True
         size_hint: (1,1)
         play: True
-
         canvas.before:
             PushMatrix
             Rotate:
@@ -65,8 +62,7 @@ Builder.load_string('''
                 origin: self.center
         canvas.after:
             PopMatrix
-
-
+            
     Button:
         id: button
         text: 'Capture'
@@ -79,17 +75,16 @@ Builder.load_string('''
 class ProductDisplay(GridLayout):
     def __init__(self, **kwargs):
         super(ProductDisplay, self).__init__(**kwargs)
-        self.spacing = [30,0]  # Increase spacing between rows
+        self.spacing = [30,5]
         self.cols = 2  #  columns for: Product Name, Price
         self.size_hint_y=None
-        self.show_grid = True  # Show grid lines
+        self.show_grid = True
         self.bind(minimum_height=self.setter('height'))
 
     def add_product(self, product_name, product_price):
-
         self.product_label = Label(text=product_name,size_hint_y= None, text_size=self.size, valign='top',
                               halign='left')
-        self.product_label.bind(size=self.product_label.setter('text_size'))  # Update text_size when label size changes
+        self.product_label.bind(size=self.product_label.setter('text_size'))
 
         self.product_price_label = Label(text=product_price, size_hint=(0.3, None), valign='top', halign='left')
         self.product_price_label.bind(size=self.product_price_label.setter('text_size'))
@@ -101,13 +96,14 @@ class NoMarkerPopup(Popup):
     def __init__(self, message, **kwargs):
         super(NoMarkerPopup, self).__init__(**kwargs)
         self.title = 'Warning'
-        self.size_hint = (None, None)
-        self.size = (300, 200)
+        self.size_hint = (.3, .3)
 
         content = BoxLayout(orientation='vertical')
-        content.add_widget(Label(text=message))
+        self.warningmsg = Label(text=message,font_size='15',valign='middle')
+        self.warningmsg.bind(size=self.warningmsg.setter('text_size'))
+        content.add_widget(self.warningmsg)
 
-        button = Button(text='OK')
+        button = Button(text='OK',size_hint_y=None, height='40dp')
         button.bind(on_release=self.dismiss)
         content.add_widget(button)
 
@@ -120,21 +116,22 @@ class ConfirmationPopup(Popup):
 
         layout = self.create_layout(text)
         self.content = layout
-        self.size_hint = (None, None)  # Disable automatic sizing
-        self.size = (300, 200)  # Set the size of the popup
+        self.size_hint = (.5, .4)
+
     def create_layout(self, text):
         layout = BoxLayout(orientation='vertical')
-        layout.add_widget(Label(text=text))
-        yes_button = Button(text='Yes', on_press=self.on_yes)
-        no_button = Button(text='No', on_press=self.on_no)
+        self.confirmmsg=Label(text=text, valign='middle')
+        self.confirmmsg.bind(size=self.confirmmsg.setter('text_size'))
+
+        layout.add_widget(self.confirmmsg)
+        yes_button = Button(text='Yes', on_press=self.on_yes, size_hint_y=None, height='40dp')
+        no_button = Button(text='No', on_press=self.on_no, size_hint_y=None, height='40dp')
         layout.add_widget(yes_button)
         layout.add_widget(no_button)
         return layout
-
     def on_yes(self, instance):
         self.callback(True)
         self.dismiss()
-
     def on_no(self, instance):
         self.dismiss()
         self.callback(False)
@@ -162,16 +159,36 @@ class TextInputPopup(Popup):
 class cameraClick(BoxLayout):
     def on_confirmation(self, confirmed):
         if confirmed:
-            # self.dismiss()
             print("Proceed to next screen")
-            # Code to proceed to next screen
         else:
             self.text_input_popup = TextInputPopup(callback=self.on_text_input)
             self.text_input_popup.open()
     def on_text_input(self, text):
-        # self.res=text
-        setattr(self.prod_label, "text", str(text))
+        self.res=text
         print("Correct information:", text)
+        setattr(self.prod_label, "text", str(text))
+        self.sizeshapeGrade(text)
+    def sizeshapeGrade(self,res):
+        if res in sphereproduct:
+            self.object_volume = (4 / 3) * math.pi * (self.object_width / 2) ** 2
+            self.shape = "spherical"
+        else:  # cylinder
+            self.object_volume = self.object_height * math.pi * (self.object_width / 2) ** 2
+            self.shape = "elongated"
+        print(self.shape)
+        print(self.diameter)
+        # get size based on shape and diameter (longest width/height)
+        for category, ranges in size_categories.items():
+            min_diameter, max_diameter = ranges[self.shape]
+            if min_diameter <= self.diameter < max_diameter:
+                self.prodsize = category
+
+        self.object_volume = round(self.object_volume, 3)
+        print("volume", self.object_volume)
+
+        setattr(self.prod_vol, "text", str(self.object_volume) + " cm [sup]3[/sup]")
+        setattr(self.size_scale, "text", self.prodsize)
+
     def switch(self,instance):
         price = self.prod_label.text
 
@@ -180,11 +197,6 @@ class cameraClick(BoxLayout):
 
         # Add the instance to the ScreenManager
         myapp.screen_manager.add_widget(second_screen)
-
-        # self.secondpage = SecondPage()
-        # screen = Screen(name='Second')
-        # screen.add_widget(self.secondpage)
-        # self.screen_manager.add_widget(screen)
 
         # Switch to the second screen
         myapp.screen_manager.current = second_screen.name
@@ -200,8 +212,8 @@ class cameraClick(BoxLayout):
         print("path", os.path.join(os.getcwd(), SAVE_PATH))
 
         # Load Image
-        frame = cv2.imread(os.path.join(os.getcwd(), 'img.png'))
-        print("path", os.path.join(os.getcwd(), 'img.png'))
+        frame = cv2.imread(os.path.join(os.getcwd(), 'disimg2.jpg'))
+        # frame = cv2.imread(os.path.join(os.getcwd(), SAVE_PATH))
 
         # Load Aruco detector
         parameters = cv2.aruco.DetectorParameters_create()
@@ -235,7 +247,7 @@ class cameraClick(BoxLayout):
 
             largestArea=0
 
-            # Draw objects boundaries
+            #return only largest ctr except aruco
             for cnt in contours:
                 rect = cv2.minAreaRect(cnt)
                 (x, y), (w, h), angle = rect
@@ -247,30 +259,28 @@ class cameraClick(BoxLayout):
                 x_max2 = np.max(box[:, 0])
                 y_min2 = np.min(box[:, 1])
                 y_max2 = np.max(box[:, 1])
+                if x_min2<0 or x_max2<0 or y_min2<0 or y_max2<0:
+                    break
+                # cv2.imshow("framearuco", frameCut2[y:y+h, x:x+w])
+                # cv2.polylines(frame, [box], True, (255, 0, 0), 2)
 
-                #return only largest ctr except aruco
-                if not (x_min-13<x_min2 and x_max+13>x_max2 and y_min-13<y_min2 and y_max+13>y_max2):  # if ctr is not aurco marker
-                    area = cv2.contourArea(cnt)
-                    if area>largestArea:
+                if not (x_min-20<x_min2 and x_max+20>x_max2 and y_min-20<y_min2 and y_max+20>y_max2):  # if ctr is not aurco marker
+                    if w*h>largestArea:
                         largestCtr=cnt
-                else:
-                    frameCut2 = frame[y_min - 13:y_max + 13, x_min - 13:x_max + 13]
-                    # cv2.imshow("framearuco", frameCut2)
 
-            # Get rect
             rect = cv2.minAreaRect(largestCtr)
             (x, y), (w, h), angle = rect
 
             # Get Width and Height of the Objects by applying the Ratio pixel to cm
-            object_width = w / pixel_cm_ratio
-            object_height = h / pixel_cm_ratio
+            self.object_width = w / pixel_cm_ratio
+            self.object_height = h / pixel_cm_ratio
 
 
-            #diameter based largest dimensions
+            #diameter based on largest dimensions
             if w>h:
-                self.diameter = object_width
+                self.diameter = self.object_width
             else:
-                self.diameter = object_height
+                self.diameter = self.object_height
 
             box = cv2.boxPoints(rect)
             box = np.int0(box)
@@ -288,8 +298,6 @@ class cameraClick(BoxLayout):
             os.remove(os.path.join(os.getcwd(), SAVE_PATH))
             cv2.imwrite(os.path.join(os.getcwd(), SAVE_PATH),frameCut)
 
-            # img = PIL.Image.open(os.path.join(os.getcwd(), 'img3.png'))
-
             #load the tflite model
             model = 'GrocRecogModel.tflite'
             model_to_pred = TensorFlowModel()
@@ -297,6 +305,7 @@ class cameraClick(BoxLayout):
 
             # Read image and predict
             img = PIL.Image.open(os.path.join(os.getcwd(), SAVE_PATH))
+            # img = PIL.Image.open("disimg3.jpg")
             img_arr = img.resize((224, 224))
             img_arr = np.array(img_arr, np.float32)
             img_arr = img_arr[:, :, :3] / 255.0
@@ -310,35 +319,21 @@ class cameraClick(BoxLayout):
             print("ml model", str(self.res))
 
             #confirming prod name with pop up, renew prod name if nt correct
-            #check prod name in offered prod list
             self.info = "Is the product name: "+str(self.res)
             self.confirmation_popup = ConfirmationPopup(text=self.info, callback=self.on_confirmation)
             self.confirmation_popup.open()
 
             self.prod_label = Label(text=str(self.res), size_hint=(1, .1))
 
-            if self.res in sphereproduct:
-                object_volume = (4 / 3) * math.pi * (object_width / 2) ** 2
-                self.shape="spherical"
-            else:  # cylinder
-                object_volume = object_height * math.pi * (object_width / 2) ** 2
-                self.shape = "elongated"
+            self.prod_vol = Label(text="", size_hint=(1, .1), markup=True)
+            self.size_scale = Label(text="", size_hint=(1, .1), markup=True)
 
-            #get size based on shape and diameter (longest width/height)
-            for category, ranges in size_categories.items():
-                min_diameter, max_diameter = ranges[self.shape]
-                if min_diameter <= self.diameter < max_diameter:
-                    self.prodsize=category
+            self.sizeshapeGrade(self.res)
 
-            object_volume = round(object_volume, 3)
-            print("volume", object_volume)
-            self.prod_vol = Label(text=str(object_volume)+" cm [sup]3[/sup]" ,size_hint=(1, .1),markup=True)
-
-            self.size_scale = Label(text=self.prodsize ,size_hint=(1, .1),markup=True)
-            cv2.putText(frame, "Width {} cm".format(round(object_width, 2)), (int(x - 100), int(y - 40)),
-                        cv2.FONT_HERSHEY_PLAIN, 1, (200, 200, 0), 2)
-            cv2.putText(frame, "Height {} cm".format(round(object_height, 2)), (int(x - 100), int(y + 15)),
-                        cv2.FONT_HERSHEY_PLAIN, 1, (200, 200, 0), 2)
+            cv2.putText(frame, "Width {} cm".format(round(self.object_width, 2)), (int(x - 100), int(y - 40)),
+                        cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 3)
+            cv2.putText(frame, "Height {} cm".format(round(self.object_height, 2)), (int(x - 100), int(y + 15)),
+                        cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 3)
 
             cv2.circle(frame, (int(x), int(y)), 4, (0, 0, 255), -1)
             cv2.polylines(frame, [box], True, (255, 0, 0), 2)
@@ -348,11 +343,9 @@ class cameraClick(BoxLayout):
             img_texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
             self.remove_widget(self.web_cam)
             self.remove_widget(self.btn)
-            # self.web_cam = Image(source=SAVE_PATH, size_hint=(1,1))
-            self.cam_result = Image(size_hint=(1, 1),texture=img_texture)
+            self.cam_result = Image(size_hint=(1, 1), texture=img_texture)
 
-            # self.web_cam.texture = img_texture
-            self.nextbtn = Button(text="Next",background_color =(0, 0, 145, 0.8), size_hint_y= None,height= '50dp')
+            self.nextbtn = Button(text="Next", size_hint_y=None, height='50dp')
             self.nextbtn.bind(on_press=self.switch)
 
             self.add_widget(self.cam_result)
@@ -362,7 +355,7 @@ class cameraClick(BoxLayout):
             self.add_widget(self.nextbtn)
 
         else:
-            message = "Aruco marker is not being captured!"
+            message = "Unable to Capture Aruco marker!"
             popup = NoMarkerPopup(message=message)
             popup.open()
             print("no mark")
@@ -374,7 +367,6 @@ class SecondPage(Screen):
 
         def prodfilterprice(req, products_return):
             print(products_return)
-            # setattr(self.prod_scraped, "text", str(products_return))
 
             scroll_layout = GridLayout(cols=1, spacing=10, size_hint_y=None)
             scroll_layout.bind(minimum_height=scroll_layout.setter('height'))
@@ -397,23 +389,28 @@ class SecondPage(Screen):
             scroll_view.add_widget(scroll_layout)
             self.layout.add_widget(scroll_view)
 
-        self.layout = BoxLayout(orientation='horizontal')
+        self.leftlayout = BoxLayout(orientation='vertical',size_hint_x=0.3)
 
-        self.prodname = Label(text=f"Product Name:\n{self.prodnametxt}", font_size=25, size=(2, 20))
-        self.layout.add_widget(self.prodname)
+        self.layout = BoxLayout(orientation='horizontal',spacing=10)
+
+        # Button to switch to previous screen
+        self.button = Button(text="Previous",size_hint_y= None,height= '50dp')
+        self.button.bind(on_press=self.switch_screen)
+
+        self.prodname = Label(text=f"Product Name:\n{self.prodnametxt}", font_size=20,valign='middle') #size=(2, 20))
+        self.prodname.bind(size=self.prodname.setter('text_size'))
+
         print(self.prodnametxt)
+        self.leftlayout.add_widget(self.prodname)
+        self.leftlayout.add_widget(self.button)
+
+        self.layout.add_widget(self.leftlayout)
+
 
         UrlRequest("https://apifyp.azurewebsites.net/get/" + str(self.prodnametxt),
                    on_success=prodfilterprice)
 
-
-        # Button to switch to previous screen
-        button = Button(text="Previous")
-        button.bind(on_press=self.switch_screen)
-
         self.add_widget(self.layout)
-        # self.add_widget(button)
-
     def switch_screen(self, instance):
         myapp.screen_manager.current = "First"
 
@@ -424,11 +421,6 @@ class MyApp(App):
         screen = Screen(name='First')
         screen.add_widget(self.sizepage)
         self.screen_manager.add_widget(screen)
-
-        # self.secondpage = SecondPage()
-        # screen = Screen(name='Second')
-        # screen.add_widget(self.secondpage)
-        # self.screen_manager.add_widget(screen)
 
         return self.screen_manager
 
