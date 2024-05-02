@@ -7,7 +7,7 @@ if platform == 'android':
 
     request_permissions([
         Permission.CAMERA,
-        Permission.READ_EXTERNAL_STORAGE, 
+        Permission.READ_EXTERNAL_STORAGE,
         Permission.WRITE_EXTERNAL_STORAGE])
 
     File = autoclass('java.io.File')

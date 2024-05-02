@@ -1,12 +1,13 @@
 import cv2
 import math
-
 from object_detector import *
 import numpy as np
+from android_permissions import AndroidPermissions
 import os
 from model import TensorFlowModel
-
+from kivy.properties import ObjectProperty
 import PIL.Image
+from camera4kivy import Preview
 from kivy.uix.popup import Popup
 from kivy.uix.textinput import TextInput
 from kivy.app import App
@@ -22,8 +23,9 @@ from kivy.graphics.texture import Texture
 from kivy.uix.camera import Camera
 from kivy.network.urlrequest import UrlRequest
 from kivy.graphics import PushMatrix, PopMatrix, Rotate
-from kivy.uix.screenmanager import ScreenManager,Screen,SlideTransition
+from kivy.uix.screenmanager import ScreenManager, Screen, SlideTransition
 from kivy.uix.scrollview import ScrollView
+from toast import Toast
 
 # Initialize variables
 labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage', 5: 'capsicum', 6: 'carrot',
@@ -32,7 +34,7 @@ labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage'
           19: 'mango', 20: 'onion', 21: 'orange', 22: 'paprika', 23: 'pear', 24: 'peas', 25: 'pineapple',
           26: 'pomegranate', 27: 'potato', 28: 'raddish', 29: 'soy beans', 30: 'spinach', 31: 'sweetcorn',
           32: 'sweetpotato', 33: 'tomato', 34: 'turnip', 35: 'watermelon'}
-sphereproduct = ['apple','banana', 'bello pepper', 'chilli pepper', 'grapes', 'jalepeno', 'kiwi', 'lemon', 'orange',
+sphereproduct = ['apple', 'banana', 'bello pepper', 'chilli pepper', 'grapes', 'jalepeno', 'kiwi', 'lemon', 'orange',
                  'paprika', 'pear', 'tomato', 'pomegranate', 'watermelon', 'lettuce', 'onion']
 
 cylinderproduct = ['beetroot', 'cabbage', 'capsicum', 'carrot', 'cauliflower', 'corn', 'cucumber', 'eggplant', 'ginger',
@@ -40,29 +42,20 @@ cylinderproduct = ['beetroot', 'cabbage', 'capsicum', 'carrot', 'cauliflower', '
                    'turnip', 'pineapple']
 
 size_categories = {
-    'Small': {'spherical': (5.08, 6.35), 'elongated': (1.27, 2.54)},
-    'Medium': {'spherical': (6.35, 7.62), 'elongated': (2.54, 3.81)},
-    'Large': {'spherical': (7.62, 8.89), 'elongated': (3.81, 5.08)},
-    'Extra-Large or Jumbo': {'spherical': (8.89, float('inf')), 'elongated': (5.08, float('inf'))}
+    'Small': {'spherical': (2.08, 9.35), 'elongated': (0.27, 2.54)},
+    'Medium': {'spherical': (9.35, 10.62), 'elongated': (2.54, 3.81)},
+    'Large': {'spherical': (10.62, 111.89), 'elongated': (3.81, 5.08)},
+    'Extra-Large or Jumbo': {'spherical': (11.89, float('inf')), 'elongated': (5.08, float('inf'))}
 }
 
-Builder.load_string('''
+Builder.load_string("""
 <cameraClick>:
     orientation: 'vertical'
-    Camera:
-        id: camera
-        resolution: (640, 480)
-        allow_stretch: True
+
+    Preview:
+        id: preview
         size_hint: (1,1)
-        play: True
-        canvas.before:
-            PushMatrix
-            Rotate:
-                angle: -90
-                origin: self.center
-        canvas.after:
-            PopMatrix
-            
+
     Button:
         id: button
         text: 'Capture'
@@ -70,20 +63,27 @@ Builder.load_string('''
         height: '40dp'
         on_press: root.takepic()
 
-''')
+    Button:
+        id: nextcamera
+        text: 'Check Result'
+        size_hint_y: None
+        height: '40dp'
+        on_press: root.picresult()
+""")
+
 
 class ProductDisplay(GridLayout):
     def __init__(self, **kwargs):
         super(ProductDisplay, self).__init__(**kwargs)
-        self.spacing = [30,5]
-        self.cols = 2  #  columns for: Product Name, Price
-        self.size_hint_y=None
+        self.spacing = [30, 5]
+        self.cols = 2  # columns for: Product Name, Price
+        self.size_hint_y = None
         self.show_grid = True
         self.bind(minimum_height=self.setter('height'))
 
     def add_product(self, product_name, product_price):
-        self.product_label = Label(text=product_name,size_hint_y= None, text_size=self.size, valign='top',
-                              halign='left')
+        self.product_label = Label(text=product_name, size_hint_y=None, text_size=self.size, valign='top',
+                                   halign='left')
         self.product_label.bind(size=self.product_label.setter('text_size'))
 
         self.product_price_label = Label(text=product_price, size_hint=(0.3, None), valign='top', halign='left')
@@ -92,6 +92,7 @@ class ProductDisplay(GridLayout):
         self.add_widget(self.product_label)
         self.add_widget(self.product_price_label)
 
+
 class NoMarkerPopup(Popup):
     def __init__(self, message, **kwargs):
         super(NoMarkerPopup, self).__init__(**kwargs)
@@ -99,15 +100,17 @@ class NoMarkerPopup(Popup):
         self.size_hint = (.3, .3)
 
         content = BoxLayout(orientation='vertical')
-        self.warningmsg = Label(text=message,font_size='15',valign='middle')
+        self.warningmsg = Label(text=message, font_size='30', valign='middle')
         self.warningmsg.bind(size=self.warningmsg.setter('text_size'))
         content.add_widget(self.warningmsg)
 
-        button = Button(text='OK',size_hint_y=None, height='40dp')
+        button = Button(text='OK', size_hint_y=None, height='40dp')
         button.bind(on_release=self.dismiss)
         content.add_widget(button)
 
         self.content = content
+
+
 class ConfirmationPopup(Popup):
     def __init__(self, text, callback, **kwargs):
         super(ConfirmationPopup, self).__init__(**kwargs)
@@ -120,7 +123,7 @@ class ConfirmationPopup(Popup):
 
     def create_layout(self, text):
         layout = BoxLayout(orientation='vertical')
-        self.confirmmsg=Label(text=text, valign='middle')
+        self.confirmmsg = Label(text=text, valign='middle')
         self.confirmmsg.bind(size=self.confirmmsg.setter('text_size'))
 
         layout.add_widget(self.confirmmsg)
@@ -129,12 +132,16 @@ class ConfirmationPopup(Popup):
         layout.add_widget(yes_button)
         layout.add_widget(no_button)
         return layout
+
     def on_yes(self, instance):
         self.callback(True)
         self.dismiss()
+
     def on_no(self, instance):
         self.dismiss()
         self.callback(False)
+
+
 class TextInputPopup(Popup):
     def __init__(self, callback, **kwargs):
         super(TextInputPopup, self).__init__(**kwargs)
@@ -142,33 +149,43 @@ class TextInputPopup(Popup):
         self.callback = callback
 
         self.text_input = TextInput()
-        self.submit_button = Button(text='Submit', on_press=self.on_submit)
+        self.submit_button = Button(text='Submit', on_press=self.on_submit,valign='middle',halign='center')
+        # self.text_input.bind(size=self.text_input.setter('text_size'))
+        self.submit_button.bind(size=self.submit_button.setter('text_size'))
 
         layout = BoxLayout(orientation='vertical')
         layout.add_widget(self.text_input)
         layout.add_widget(self.submit_button)
 
         self.content = layout
-        self.size_hint = (None, None)  # Disable automatic sizing
-        self.size = (300, 200)  # Set the size of the popup
-
+        self.size_hint = (.5, .4)
     def on_submit(self, instance):
         self.dismiss()
         self.callback(self.text_input.text)
 
 class cameraClick(BoxLayout):
+    def __init__(self, **args):
+        super().__init__(**args)
+        # file_path = os.path.join(os.getcwd(), "photoApp", "img.jpg")
+        # if os.path.exists(file_path):
+        #     os.remove(file_path)
+        self.ids.preview.connect_camera(filepath_callback= self.capture_path)
+    def capture_path(self,file_path):
+        Toast().show(file_path)
     def on_confirmation(self, confirmed):
         if confirmed:
             print("Proceed to next screen")
         else:
             self.text_input_popup = TextInputPopup(callback=self.on_text_input)
             self.text_input_popup.open()
+
     def on_text_input(self, text):
-        self.res=text
+        self.res = text
         print("Correct information:", text)
         setattr(self.prod_label, "text", str(text))
         self.sizeshapeGrade(text)
-    def sizeshapeGrade(self,res):
+
+    def sizeshapeGrade(self, res):
         if res in sphereproduct:
             self.object_volume = (4 / 3) * math.pi * (self.object_width / 2) ** 2
             self.shape = "spherical"
@@ -185,35 +202,29 @@ class cameraClick(BoxLayout):
 
         self.object_volume = round(self.object_volume, 3)
         print("volume", self.object_volume)
-
+        print("prodsize", self.prodsize)
         setattr(self.prod_vol, "text", str(self.object_volume) + " cm [sup]3[/sup]")
         setattr(self.size_scale, "text", self.prodsize)
 
-    def switch(self,instance):
+    def switch(self, instance):
+        self.web_cam.disconnect_camera()
         price = self.prod_label.text
-
         # Create an instance of SecondScreen and pass the price as a parameter
         second_screen = SecondPage(price=price)
-
-        # Add the instance to the ScreenManager
         myapp.screen_manager.add_widget(second_screen)
-
-        # Switch to the second screen
         myapp.screen_manager.current = second_screen.name
 
-    def takepic(self, *args):
-
-        SAVE_PATH = 'img.png'
-
-        self.web_cam = self.ids['camera']
+    def picresult(self):
+        SAVE_PATH = "img.jpg"
+        SUB_DIR = "photoApp"
+        self.web_cam = self.ids['preview']
         self.btn = self.ids['button']
-        self.web_cam.export_to_png(os.path.join(os.getcwd(), SAVE_PATH))
+        self.btn2 = self.ids['nextcamera']
 
-        print("path", os.path.join(os.getcwd(), SAVE_PATH))
-
-        # Load Image
-        frame = cv2.imread(os.path.join(os.getcwd(), 'disimg2.jpg'))
-        # frame = cv2.imread(os.path.join(os.getcwd(), SAVE_PATH))
+        # frameSave = cv2.imread(os.path.join(os.getcwd(), SAVE_PATH))
+        frameSave = cv2.imread("/storage/emulated/0/DCIM/My Application/photoApp/img.jpg")
+        frame = cv2.resize(frameSave, (480, 640))
+        print("path1",os.path.join(os.getcwd(), SAVE_PATH))
 
         # Load Aruco detector
         parameters = cv2.aruco.DetectorParameters_create()
@@ -245,9 +256,9 @@ class cameraClick(BoxLayout):
             y_min = int(min(corners[0][0][:, 1]))
             y_max = int(max(corners[0][0][:, 1]))
 
-            largestArea=0
-
-            #return only largest ctr except aruco
+            largestArea = 0
+            largestCtr = contours[0]
+            # return only largest ctr except aruco
             for cnt in contours:
                 rect = cv2.minAreaRect(cnt)
                 (x, y), (w, h), angle = rect
@@ -259,14 +270,13 @@ class cameraClick(BoxLayout):
                 x_max2 = np.max(box[:, 0])
                 y_min2 = np.min(box[:, 1])
                 y_max2 = np.max(box[:, 1])
-                if x_min2<0 or x_max2<0 or y_min2<0 or y_max2<0:
+                if x_min2 < 0 or x_max2 < 0 or y_min2 < 0 or y_max2 < 0:
                     break
-                # cv2.imshow("framearuco", frameCut2[y:y+h, x:x+w])
-                # cv2.polylines(frame, [box], True, (255, 0, 0), 2)
 
-                if not (x_min-20<x_min2 and x_max+20>x_max2 and y_min-20<y_min2 and y_max+20>y_max2):  # if ctr is not aurco marker
-                    if w*h>largestArea:
-                        largestCtr=cnt
+                if not (x_min - 20 < x_min2 and x_max + 20 > x_max2 and
+                        y_min - 20 < y_min2 and y_max + 20 > y_max2):  # if ctr is not aurco marker
+                    if w * h > largestArea:
+                        largestCtr = cnt
 
             rect = cv2.minAreaRect(largestCtr)
             (x, y), (w, h), angle = rect
@@ -274,13 +284,14 @@ class cameraClick(BoxLayout):
             # Get Width and Height of the Objects by applying the Ratio pixel to cm
             self.object_width = w / pixel_cm_ratio
             self.object_height = h / pixel_cm_ratio
+            print(self.object_width)
+            print(self.object_height)
 
-
-            #diameter based on largest dimensions
-            if w>h:
-                self.diameter = self.object_width
-            else:
+            # diameter based on largest dimensions
+            if w > h:
                 self.diameter = self.object_height
+            else:
+                self.diameter = self.object_width
 
             box = cv2.boxPoints(rect)
             box = np.int0(box)
@@ -291,21 +302,20 @@ class cameraClick(BoxLayout):
             y_min2 = np.min(box[:, 1])
             y_max2 = np.max(box[:, 1])
 
-            frameCut = frame[y_min2:y_max2, x_min2:x_max2]
-            # cv2.imshow("frameproductonly", frameCut)
+            #frameCut = frame[y_min2-5:y_max2+5, x_min2-5:x_max2+5]
 
-            #save only img w/t aruco marker
-            os.remove(os.path.join(os.getcwd(), SAVE_PATH))
-            cv2.imwrite(os.path.join(os.getcwd(), SAVE_PATH),frameCut)
+            # save only img w/t aruco marker
+            # os.remove(os.path.join(os.getcwd(), SUB_DIR, SAVE_PATH))
+            cv2.imwrite(os.path.join(os.getcwd(), SAVE_PATH), frameSave)
 
-            #load the tflite model
+            # load the tflite model
             model = 'GrocRecogModel.tflite'
             model_to_pred = TensorFlowModel()
             model_to_pred.load(os.path.join(os.getcwd(), model))
-
+            print("path", os.path.join(os.getcwd(), SAVE_PATH))
             # Read image and predict
             img = PIL.Image.open(os.path.join(os.getcwd(), SAVE_PATH))
-            # img = PIL.Image.open("disimg3.jpg")
+            # img = PIL.Image.open(file_path)
             img_arr = img.resize((224, 224))
             img_arr = np.array(img_arr, np.float32)
             img_arr = img_arr[:, :, :3] / 255.0
@@ -316,13 +326,11 @@ class cameraClick(BoxLayout):
             ylabel = int(ylabel)
 
             self.res = str(labels[ylabel])
-            print("ml model", str(self.res))
 
-            #confirming prod name with pop up, renew prod name if nt correct
-            self.info = "Is the product name: "+str(self.res)
+            # confirming prod name with pop up, renew prod name if nt correct
+            self.info = "Is the product name: " + str(self.res)
             self.confirmation_popup = ConfirmationPopup(text=self.info, callback=self.on_confirmation)
             self.confirmation_popup.open()
-
             self.prod_label = Label(text=str(self.res), size_hint=(1, .1))
 
             self.prod_vol = Label(text="", size_hint=(1, .1), markup=True)
@@ -331,18 +339,22 @@ class cameraClick(BoxLayout):
             self.sizeshapeGrade(self.res)
 
             cv2.putText(frame, "Width {} cm".format(round(self.object_width, 2)), (int(x - 100), int(y - 40)),
-                        cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 3)
-            cv2.putText(frame, "Height {} cm".format(round(self.object_height, 2)), (int(x - 100), int(y + 15)),
-                        cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 3)
+                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 1)
+            cv2.putText(frame, "Height {} cm".format(round(self.object_height, 2)), (int(x - 100), int(y + 30)),
+                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 1)
 
-            cv2.circle(frame, (int(x), int(y)), 4, (0, 0, 255), -1)
-            cv2.polylines(frame, [box], True, (255, 0, 0), 2)
+            cv2.circle(frame, (int(x), int(y)), 6, (0, 0, 255), -1)
+            cv2.polylines(frame, [box], True, (255, 0, 0), 8)
+            
+            frame = cv2.resize(frame, (960, 1280))
+            rgb_image = cv2.cvtColor(cv2.flip(frame, 0), cv2.COLOR_BGR2RGB)
+            pil_image = PIL.Image.fromarray(rgb_image)
+            img_texture = Texture.create(size=pil_image.size, colorfmt='rgb')
+            img_texture.blit_buffer(pil_image.tobytes(), colorfmt='rgb', bufferfmt='ubyte')
 
-            buf = cv2.flip(frame, 0).tobytes()
-            img_texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
-            img_texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
             self.remove_widget(self.web_cam)
             self.remove_widget(self.btn)
+            self.remove_widget(self.btn2)
             self.cam_result = Image(size_hint=(1, 1), texture=img_texture)
 
             self.nextbtn = Button(text="Next", size_hint_y=None, height='50dp')
@@ -359,6 +371,18 @@ class cameraClick(BoxLayout):
             popup = NoMarkerPopup(message=message)
             popup.open()
             print("no mark")
+
+    def takepic(self, *args):
+        try:
+            os.remove("/storage/emulated/0/DCIM/My Application/photoApp/img.jpg")
+        except:
+            pass
+        SAVE_PATH = "img.jpg"
+        SUB_DIR = "photoApp"
+        self.web_cam = self.ids['preview']
+        # self.web_cam.export_to_png(os.path.join(os.getcwd(), SAVE_PATH))
+        self.web_cam.capture_photo(subdir=SUB_DIR, name=SAVE_PATH)
+
 
 class SecondPage(Screen):
     def __init__(self, price, **kwargs):
@@ -377,7 +401,8 @@ class SecondPage(Screen):
                 if isinstance(item, str):  # If it's a supermarket name
                     current_supermarket = item
                     product_display = ProductDisplay()
-                    scroll_layout.add_widget(Label(text=current_supermarket, bold=True, size_hint_y=None, height=40, font_size=20))
+                    scroll_layout.add_widget(
+                        Label(text=current_supermarket, bold=True, size_hint_y=None, height=40, font_size=50))
                     scroll_layout.add_widget(product_display)
 
                 else:  # If it's a product
@@ -389,15 +414,15 @@ class SecondPage(Screen):
             scroll_view.add_widget(scroll_layout)
             self.layout.add_widget(scroll_view)
 
-        self.leftlayout = BoxLayout(orientation='vertical',size_hint_x=0.3)
+        self.leftlayout = BoxLayout(orientation='vertical', size_hint_x=0.3)
 
-        self.layout = BoxLayout(orientation='horizontal',spacing=10)
+        self.layout = BoxLayout(orientation='horizontal', spacing=10)
 
         # Button to switch to previous screen
-        self.button = Button(text="Previous",size_hint_y= None,height= '50dp')
+        self.button = Button(text="Previous", size_hint_y=None, height='50dp')
         self.button.bind(on_press=self.switch_screen)
 
-        self.prodname = Label(text=f"Product Name:\n{self.prodnametxt}", font_size=20,valign='middle') #size=(2, 20))
+        self.prodname = Label(text=f"Product Name:\n{self.prodnametxt}", font_size=30, valign='middle',halign='center')  # size=(2, 20))
         self.prodname.bind(size=self.prodname.setter('text_size'))
 
         print(self.prodnametxt)
@@ -406,23 +431,32 @@ class SecondPage(Screen):
 
         self.layout.add_widget(self.leftlayout)
 
-
         UrlRequest("https://apifyp.azurewebsites.net/get/" + str(self.prodnametxt),
                    on_success=prodfilterprice)
 
         self.add_widget(self.layout)
+
     def switch_screen(self, instance):
         myapp.screen_manager.current = "First"
+
 
 class MyApp(App):
     def build(self):
         self.screen_manager = ScreenManager()
+
         self.sizepage = cameraClick()
+        # self.sizepage = PhotoScreen1()
         screen = Screen(name='First')
         screen.add_widget(self.sizepage)
         self.screen_manager.add_widget(screen)
 
         return self.screen_manager
+
+    def on_start(self):
+        self.dont_gc = AndroidPermissions(self.start_app)
+
+    def start_app(self):
+        self.dont_gc = None
 
 
 if __name__ == '__main__':

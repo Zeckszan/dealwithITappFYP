@@ -37,7 +37,7 @@ version = 0.1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,opencv_extras,opencv,numpy,android,pillow
+requirements = python3,kivy,opencv_extras,opencv,numpy,android,pillow,camera4kivy,gestures4kivy
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -101,7 +101,7 @@ android.permissions = android.permission.INTERNET,CAMERA, READ_EXTERNAL_STORAGE,
 #android.features = android.hardware.usb.host
 
 # (int) Target Android API, should be as high as possible.
-#android.api = 31
+android.api = 33
 
 # (int) Minimum API your APK / AAB will support.
 #android.minapi = 21
@@ -250,9 +250,9 @@ android.gradle_dependencies = org.tensorflow:tensorflow-lite:+,org.tensorflow:te
 
 # (list) Android additional libraries to copy into libs/armeabi
 #android.add_libs_armeabi = libs/android/*.so
-android.add_libs_armeabi_v7a = %(source.dir)s/opencv/native/libs/armeabi-v7a/libopencv_java4.so
+#android.add_libs_armeabi_v7a = %(source.dir)s/opencv/native/libs/armeabi-v7a/libopencv_java4.so
 android.add_libs_arm64_v8a = %(source.dir)s/opencv/native/libs/arm64-v8a/libopencv_java4.so
-android.add_libs_x86 = %(source.dir)s/opencv/native/libs/x86/libopencv_java4.so
+#android.add_libs_x86 = %(source.dir)s/opencv/native/libs/x86/libopencv_java4.so
 #android.add_libs_mips = libs/android-mips/*.so
 
 # (bool) Indicate whether the screen should stay on
@@ -283,7 +283,7 @@ android.add_libs_x86 = %(source.dir)s/opencv/native/libs/x86/libopencv_java4.so
 
 # (list) The Android archs to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
 # In past, was `android.arch` as we weren't supporting builds for multiple archs at the same time.
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a
 
 # (int) overrides automatic versionCode computation (used in build.gradle)
 # this is not the same as app version and should only be edited if you know what you're doing
@@ -333,7 +333,7 @@ android.allow_backup = True
 #p4a.local_recipes =
 
 # (str) Filename to the hook for p4a
-#p4a.hook =
+p4a.hook = camerax_provider/gradle_options.py
 
 # (str) Bootstrap to use for android builds
 # p4a.bootstrap = sdl2
