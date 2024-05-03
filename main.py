@@ -166,9 +166,6 @@ class TextInputPopup(Popup):
 class cameraClick(BoxLayout):
     def __init__(self, **args):
         super().__init__(**args)
-        # file_path = os.path.join(os.getcwd(), "photoApp", "img.jpg")
-        # if os.path.exists(file_path):
-        #     os.remove(file_path)
         self.ids.preview.connect_camera(filepath_callback= self.capture_path)
     def capture_path(self,file_path):
         Toast().show(file_path)
@@ -220,8 +217,6 @@ class cameraClick(BoxLayout):
         self.web_cam = self.ids['preview']
         self.btn = self.ids['button']
         self.btn2 = self.ids['nextcamera']
-
-        # frameSave = cv2.imread(os.path.join(os.getcwd(), SAVE_PATH))
         frameSave = cv2.imread("/storage/emulated/0/DCIM/My Application/photoApp/img.jpg")
         frame = cv2.resize(frameSave, (480, 640))
         print("path1",os.path.join(os.getcwd(), SAVE_PATH))
@@ -315,7 +310,6 @@ class cameraClick(BoxLayout):
             print("path", os.path.join(os.getcwd(), SAVE_PATH))
             # Read image and predict
             img = PIL.Image.open(os.path.join(os.getcwd(), SAVE_PATH))
-            # img = PIL.Image.open(file_path)
             img_arr = img.resize((224, 224))
             img_arr = np.array(img_arr, np.float32)
             img_arr = img_arr[:, :, :3] / 255.0
@@ -380,7 +374,6 @@ class cameraClick(BoxLayout):
         SAVE_PATH = "img.jpg"
         SUB_DIR = "photoApp"
         self.web_cam = self.ids['preview']
-        # self.web_cam.export_to_png(os.path.join(os.getcwd(), SAVE_PATH))
         self.web_cam.capture_photo(subdir=SUB_DIR, name=SAVE_PATH)
 
 
